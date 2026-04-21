@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>📚 协作文档中心</title>
+    <!-- 引入 Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root { --primary: #0984e3; --gray: #636e72; --bg: #f5f6fa; --sidebar-bg: #2f3640; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); }
+        
+        /* 侧边栏样式 */
+        .sidebar { width: 300px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; overflow-y: auto; }
+        .sidebar-header { padding: 20px; background: #1e272e; text-align: center; }
+        .nav-group { padding: 10px; }
+        .group-title { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 10px; padding-left: 10px; }
+        .category-item { margin-bottom: 15px; }
+        .category-name { font-weight: bold; padding: 5px 10px; color: #aaa; font-size: 13px; }
+        .doc-item { padding: 8px 20px; cursor: pointer; transition: 0.2s; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .doc-item:hover { background: rgba(255,255,255,0.1); }
+        .doc-item.active { background: var(--primary); color: white; }
+        .doc-item.finished { color: #555; text-decoration: line-through; } /* 已完成变灰加划线 */
+        .doc-item.finished:hover { color: #888; }
+
+        /* 主内容区 */
+        .main { flex: 1; display: flex; flex-direction: column; background: white; overflow: hidden; }
+        .toolbar { padding: 15px 25px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .content-area { flex: 1; display: flex; overflow: hidden; }
+        
+        /* 编辑与预览 */
+        .editor-container { flex: 1; display: flex; flex-direction: column; padding: 20px; border-right: 1px solid #eee; }
+        .preview-container { flex: 1; padding: 30px; overflow-y: auto; background: #fff; }
+        input.title-input { font-size: 24px; border: none; outline: none; margin-bottom: 20px; width: 100%; font-weight: bold; }
+        .category-select-area { margin-bottom: 15px; display: flex; gap: 10px; }
+        textarea { flex: 1; border: 1px solid #eee; border-radius: 8px; padding: 15px; font-family: 'Consolas', monospace; font-size: 14px; resize: none; outline: none; }
+        
+        /* Markdown 样式修饰 */
+        .markdown-body { line-height: 1.6; }
+        .markdown-body h1, .markdown-body h2 { border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .markdown-body code { background: #f1f2f6; padding: 2px 4px; border-radius: 4px; color: #e83e8c; }
+        .markdown-body pre { background: #2f3640; color: #fff; padding: 15px; border-radius: 8px; overflow-x: auto; }
+
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-danger { background: #ff7675; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h2 style="margin:0">协作文档中心</h2>
+        <button class="btn btn-primary" style="margin-top:15px; width:100%" onclick="createNewDoc()">+ 新建文档</button>
+    </div>
+
+    <!-- 未完成列表 (按分类展示) -->
+    <div class="nav-group">
+        <div class="group-title">🚧 未完成 (ING)</div>
+        <div id="unfinishedList"></div>
+    </div>
+
+    <!-- 已完成列表 (直接平铺) -->
+    <div class="nav-group">
+        <div class="group-title">✅ 已完成 (DONE)</div>
+        <div id="finishedList"></div>
+    </div>
+</div>
+
+<div class="main">
+    <div class="toolbar">
+        <div>
+            <span id="statusLabel" style="color:#888; font-size: 12px;">状态: 等待操作</span>
+        </div>
+        <div>
+            <button class="btn btn-danger" id="delBtn" style="display:none; margin-right:10px" onclick="deleteDoc()">销毁文档</button>
+            <button class="btn btn-primary" onclick="saveDoc()">保存并发布</button>
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div class="editor-container">
+            <input type="text" id="docTitle" class="title-input" placeholder="请输入文档标题...">
+            <div class="category-select-area">
+                <select id="catSelect" onchange="onCatChange()">
+                    <option value="">-- 选择分类 --</option>
+                    <option value="NEW">新建分类...</option>
+                </select>
+                <input type="text" id="newCatInput" style="display:none; flex:1; padding:5px; border-radius:4px; border:1px solid #ddd;" placeholder="新分类名称">
+                <label style="font-size:13px; color:#666; display:flex; align-items:center; cursor:pointer;">
+                    <input type="checkbox" id="docStatus"> 已完成
+                </label>
+            </div>
+            <textarea id="docContent" placeholder="在此输入 Markdown 正文内容..." oninput="updatePreview()"></textarea>
+        </div>
+        <div class="preview-container markdown-body" id="previewArea">
+            <!-- 实时 Markdown 渲染区 -->
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'http://localhost:7070/api/docs'; // 👈 这里已经改成了 7070 端口！
+    let allDocs = [];
+    let curDocId = null;
+
+    async function init() {
+        await fetchDocs();
+        updatePreview();
+    }
+
+    async function fetchDocs() {
+        try {
+            const res = await fetch(`${API_BASE}/all`);
+            const json = await res.json();
+            allDocs = json.data || [];
+            renderSidebar();
+            updateCatSelect();
+        } catch(e) { console.error('无法连接文档后端:', e); }
+    }
+
+    function renderSidebar() {
+        const unfinishedEl = document.getElementById('unfinishedList');
+        const finishedEl = document.getElementById('finishedList');
+        
+        // 1. 处理未完成 (按分类聚合)
+        const categories = {};
+        allDocs.filter(d => d.status === 0).forEach(doc => {
+            const cat = doc.category || '未分类';
+            if(!categories[cat]) categories[cat] = [];
+            categories[cat].push(doc);
+        });
+
+        unfinishedEl.innerHTML = Object.keys(categories).map(cat => `
+            <div class="category-item">
+                <div class="category-name">📁 ${cat}</div>
+                ${categories[cat].map(doc => `
+                    <div class="doc-item ${doc.id === curDocId ? 'active' : ''}" onclick="loadDoc(${doc.id})">
+                        📄 ${doc.title}
+                    </div>
+                `).join('')}
+            </div>
+        `).join('') || '<div style="padding:10px; color:#555; font-size:12px">暂无进行中的任务</div>';
+
+        // 2. 处理已完成 (扁平化变灰)
+        finishedEl.innerHTML = allDocs.filter(d => d.status === 1).map(doc => `
+            <div class="doc-item finished ${doc.id === curDocId ? 'active' : ''}" onclick="loadDoc(${doc.id})">
+                ✔️ ${doc.title}
+            </div>
+        `).join('') || '<div style="padding:10px; color:#555; font-size:12px">暂无已完成的文档</div>';
+    }
+
+    function updateCatSelect() {
+        const select = document.getElementById('catSelect');
+        const cats = [...new Set(allDocs.map(d => d.category).filter(c => c))];
+        select.innerHTML = '<option value="">-- 选择分类 --</option><option value="NEW">新建分类...</option>' + 
+                          cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    function onCatChange() {
+        const input = document.getElementById('newCatInput');
+        input.style.display = document.getElementById('catSelect').value === 'NEW' ? 'block' : 'none';
+    }
+
+    function loadDoc(id) {
+        const doc = allDocs.find(d => d.id === id);
+        if(!doc) return;
+        curDocId = doc.id;
+        document.getElementById('docTitle').value = doc.title;
+        document.getElementById('docContent').value = doc.content;
+        document.getElementById('catSelect').value = doc.category;
+        document.getElementById('docStatus').checked = doc.status === 1;
+        document.getElementById('statusLabel').innerText = '当前状态: 正在编辑已有文档';
+        document.getElementById('delBtn').style.display = 'block';
+        onCatChange();
+        updatePreview();
+        renderSidebar();
+    }
+
+    function createNewDoc() {
+        curDocId = null;
+        document.getElementById('docTitle').value = '';
+        document.getElementById('docContent').value = '';
+        document.getElementById('catSelect').value = '';
+        document.getElementById('docStatus').checked = false;
+        document.getElementById('statusLabel').innerText = '当前状态: 撰写新文档中...';
+        document.getElementById('delBtn').style.display = 'none';
+        updatePreview();
+        renderSidebar();
+    }
+
+    async function saveDoc() {
+        const title = document.getElementById('docTitle').value;
+        const content = document.getElementById('docContent').value;
+        let category = document.getElementById('catSelect').value;
+        const status = document.getElementById('docStatus').checked ? 1 : 0;
+
+        if(category === 'NEW') category = document.getElementById('newCatInput').value;
+        if(!title) return alert('请输入标题');
+
+        try {
+            const res = await fetch(`${API_BASE}/save`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: curDocId, title, content, category, status })
+            });
+            const json = await res.json();
+            alert(json.msg);
+            if(!curDocId) curDocId = json.id;
+            fetchDocs();
+        } catch(e) { alert('后端连接失败，请确保 START_DOCS.bat 已运行'); }
+    }
+
+    async function deleteDoc() {
+        if(!confirm('确定要在数据库中永久销毁这份文档吗？')) return;
+        await fetch(`${API_BASE}/delete`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id: curDocId })
+        });
+        createNewDoc();
+        fetchDocs();
+    }
+
+    function updatePreview() {
+        const content = document.getElementById('docContent').value;
+        document.getElementById('previewArea').innerHTML = marked.parse(content || '# 实时预览区\\n*在此输入 Markdown 语法即可实时预览排版效果*');
+    }
+
+    init();
+</script>
+
+</body>
+</html>

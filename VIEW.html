@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>📖 文档中心 - 深度阅读</title>
+    <!-- 引入 Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root { --primary: #0984e3; --bg: #f5f6f7; --sidebar-bg: #2f3640; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; display: flex; height: 100vh; background: var(--bg); color: #24292e; }
+        
+        /* 侧边栏 */
+        .sidebar { width: 280px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+        .sidebar-header { padding: 25px 20px; background: #1e272e; border-bottom: 1px solid #3d444d; }
+        .nav-group { padding: 10px 0; }
+        .group-title { font-size: 11px; color: #8b949e; text-transform: uppercase; margin: 15px 20px 10px; font-weight: 600; }
+        .category-name { font-size: 13px; color: #58a6ff; font-weight: bold; padding: 5px 20px; }
+        .doc-item { padding: 10px 30px; cursor: pointer; font-size: 14px; color: #c9d1d9; transition: 0.2s; border-left: 3px solid transparent; }
+        .doc-item:hover { background: rgba(255,255,255,0.05); color: white; }
+        .doc-item.active { background: rgba(9,132,227,0.2); color: white; border-left-color: var(--primary); }
+        .doc-item.finished { color: #484f58; text-decoration: line-through; opacity: 0.7; }
+
+        /* 内容区排版 - GitHub 风格 */
+        .main { flex: 1; display: flex; flex-direction: column; background: white; overflow-y: auto; }
+        .content { max-width: 850px; margin: 0 auto; padding: 45px; width: 100%; box-sizing: border-box; }
+        
+        .markdown-body { line-height: 1.6; word-wrap: break-word; }
+        .markdown-body h1 { font-size: 2em; margin-bottom: 16px; font-weight: 600; line-height: 1.25; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+        .markdown-body h2 { font-size: 1.5em; margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+        .markdown-body p { margin-top: 0; margin-bottom: 16px; }
+        .markdown-body b, .markdown-body strong { font-weight: 600; }
+        .markdown-body code { background-color: rgba(27,31,35,.05); border-radius: 3px; font-size: 85%; margin: 0; padding: .2em .4em; font-family: SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace; }
+        .markdown-body pre { background-color: #f6f8fa; border-radius: 3px; font-size: 85%; line-height: 1.45; overflow: auto; padding: 16px; }
+        .markdown-body blockquote { border-left: .25em solid #dfe2e5; color: #6a737d; padding: 0 1em; margin: 0 0 16px 0; }
+        .markdown-body ul { padding-left: 2em; margin-bottom: 16px; }
+
+        .btn-edit-float { position: fixed; bottom: 40px; right: 40px; background: var(--primary); color: white; width: 55px; height: 55px; border-radius: 50%; display: flex; justify-content: center; align-items: center; text-decoration: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-weight: bold; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h2 style="margin:0; font-size: 18px;">协作文档中心</h2>
+    </div>
+    <div class="nav-group">
+        <div class="group-title">🚧 开发中</div>
+        <div id="unfinishedList"></div>
+    </div>
+    <div class="nav-group">
+        <div class="group-title">✅ 已完成</div>
+        <div id="finishedList"></div>
+    </div>
+</div>
+
+<div class="main">
+    <div id="welcomeArea" style="text-align:center; padding:150px 20px; color:#ccc;">
+        <h1>📖 请选择文档阅读</h1>
+        <p>Markdown 渲染引擎已就绪</p>
+    </div>
+    <div id="docContentArea" style="display:none;" class="content">
+        <div id="viewBody" class="markdown-body"></div>
+    </div>
+</div>
+
+<a href="EDIT.html" class="btn-edit-float">去编辑</a>
+
+<script>
+    const API_BASE = 'http://10.189.29.81:7070/api/docs';
+    let allDocs = [];
+
+    async function init() {
+        try {
+            const res = await fetch(`${API_BASE}/all`);
+            const json = await res.json();
+            allDocs = json.data || [];
+            renderSidebar();
+        } catch(e) { document.getElementById('welcomeArea').innerHTML = "<h1>❌ 无法连接后端</h1>"; }
+    }
+
+    function renderSidebar() {
+        const unfinishedEl = document.getElementById('unfinishedList');
+        const finishedEl = document.getElementById('finishedList');
+        
+        const categories = {};
+        allDocs.filter(d => d.status === 0).forEach(doc => {
+            const cat = doc.category || '默认分类';
+            if(!categories[cat]) categories[cat] = [];
+            categories[cat].push(doc);
+        });
+
+        unfinishedEl.innerHTML = Object.keys(categories).map(cat => `
+            <div class="category-item">
+                <div class="category-name">📁 ${cat}</div>
+                ${categories[cat].map(doc => `
+                    <div class="doc-item" onclick="displayDoc(${doc.id}, this)">${doc.title}</div>
+                `).join('')}
+            </div>
+        `).join('');
+
+        finishedEl.innerHTML = allDocs.filter(d => d.status === 1).map(doc => `
+            <div class="doc-item finished" onclick="displayDoc(${doc.id}, this)">${doc.title}</div>
+        `).join('');
+    }
+
+    function displayDoc(id, el) {
+        const doc = allDocs.find(d => d.id === id);
+        if(!doc) return;
+        
+        document.querySelectorAll('.doc-item').forEach(i => i.classList.remove('active'));
+        el.classList.add('active');
+
+        document.getElementById('welcomeArea').style.display = 'none';
+        document.getElementById('docContentArea').style.display = 'block';
+        
+        // 核心渲染：Markdown 转 HTML
+        const htmlContent = `<h1>${doc.title}</h1>` + 
+                            `<p style="color:#888; font-size:12px; border-bottom:1px solid #eee; padding-bottom:10px;">分类: ${doc.category} | 更新: ${doc.update_time}</p>` + 
+                            marked.parse(doc.content || '');
+        
+        document.getElementById('viewBody').innerHTML = htmlContent;
+        window.scrollTo(0, 0);
+    }
+
+    init();
+</script>
+</body>
+</html>

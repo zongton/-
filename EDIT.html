@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>🛠️ 文档中心 - 全功能编辑</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root { --primary: #00b894; --sidebar-bg: #2d3436; --border: #eaecef; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; display: flex; height: 100vh; background: #f0f2f5; overflow: hidden; }
+        
+        /* 1. 左侧列表 */
+        .sidebar { width: 200px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+        .sidebar-header { padding: 15px; background: #1e272e; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #3d444d; }
+        .doc-item { padding: 10px 15px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #3d3d3d; color: #ccc; transition: 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .doc-item:hover { background: rgba(255,255,255,0.1); }
+        .doc-item.active { border-left: 4px solid var(--primary); background: rgba(0,184,148,0.1); color: white; }
+
+        /* 2. 中间主编辑区 */
+        .main { flex: 1; display: flex; flex-direction: column; background: white; margin: 10px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .editor-top { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .editor-body { flex: 1; display: flex; overflow: hidden; }
+        
+        .edit-fields { flex: 1; padding: 15px; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+        .preview-pane { flex: 1; padding: 25px; overflow-y: auto; background: #fff; word-wrap: break-word; }
+
+        /* 编辑控件 */
+        input.title-in { font-size: 20px; width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box; font-weight: bold; }
+        .meta-bar { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        select, .new-cat-in { padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        textarea { flex: 1; width: 100%; border: 1px solid #ddd; border-radius: 4px; padding: 15px; font-family: 'Consolas', monospace; font-size: 14px; resize: none; box-sizing: border-box; outline: none; line-height: 1.5; }
+
+        /* 3. 右侧语法秘籍 */
+        .cheat-sheet { width: 180px; background: #f9f9fb; padding: 15px; border-left: 1px solid var(--border); overflow-y: auto; font-size: 12px; color: #444; flex-shrink: 0; }
+        .cheat-title { font-weight: bold; margin-bottom: 10px; color: #000; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        .cheat-item { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px dashed #eee; }
+        .cheat-item code { color: #d63384; font-weight: bold; background: #f1f1f1; padding: 1px 3px; border-radius: 3px; }
+
+        /* Markdown 样式自愈 */
+        .preview-pane h1 { font-size: 1.6em; border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-bottom: 16px; }
+        .preview-pane h2 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 20px; }
+        .preview-pane p { margin-bottom: 16px; }
+        .preview-pane code { background: #f6f8fa; color: #e83e8c; padding: 2px 4px; border-radius: 4px; }
+        .preview-pane pre { background: #2f3640; color: #fff; padding: 15px; border-radius: 6px; overflow-x: auto; }
+
+        .btn { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .btn-save { background: var(--primary); color: white; }
+        .btn-del { background: #ff7675; color: white; }
+    </style>
+</head>
+<body>
+
+<!-- 左侧列表 -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <span>📑 文档列表</span>
+        <button onclick="newDoc()" style="background:var(--primary); color:white; border:none; border-radius:4px; padding:2px 6px; cursor:pointer;">+</button>
+    </div>
+    <div id="docList"></div>
+</div>
+
+<!-- 中间主编辑区 -->
+<div class="main">
+    <div class="editor-top">
+        <div id="docStatusInfo" style="font-size: 13px; color: #888;">✨ 新建文档</div>
+        <div>
+            <a href="VIEW.html" style="font-size:12px; color: #0984e3; margin-right:15px; text-decoration:none">👀 阅读模式</a>
+            <button class="btn btn-del" id="delBtn" style="display:none; margin-right:5px" onclick="doDelete()">销毁</button>
+            <button class="btn btn-save" onclick="doSave()">🚀 同步发布</button>
+        </div>
+    </div>
+
+    <div class="editor-body">
+        <div class="edit-fields">
+            <input type="text" id="inTitle" class="title-in" placeholder="此处输入文档标题">
+            
+            <div class="meta-bar">
+                <select id="inCat" onchange="toggleNewCat()">
+                    <option value="">-- 选择分类 --</option>
+                    <option value="NEW">+ 新建分类...</option>
+                </select>
+                <input type="text" id="inNewCat" class="new-cat-in" style="display:none" placeholder="新分类名称">
+                <label style="font-size:12px; display:flex; align-items:center; cursor:pointer;">
+                    <input type="checkbox" id="inStatus"> 已完成 (DONE)
+                </label>
+            </div>
+
+            <textarea id="inContent" placeholder="在此输入正文... # 记得在井号后面加空格哦！" oninput="refreshPreview()"></textarea>
+        </div>
+        
+        <!-- 实时预览 -->
+        <div class="preview-pane" id="prePane"></div>
+
+        <!-- 右侧语法说明 -->
+        <div class="cheat-sheet">
+            <div class="cheat-title">💡 语法秘籍</div>
+            <div class="cheat-item">大标题: <code># 标题</code></div>
+            <div class="cheat-item">中标题: <code>## 标题</code></div>
+            <div class="cheat-item">加粗: <code>**内容**</code></div>
+            <div class="cheat-item">斜体: <code>*内容*</code></div>
+            <div class="cheat-item">无序列表: <code>- 项目</code></div>
+            <div class="cheat-item">有序列表: <code>1. 项目</code></div>
+            <div class="cheat-item">行内代码: <code>`code`</code></div>
+            <div class="cheat-item">代码块:<br><code>```javascript</code></div>
+            <div class="cheat-item">引用: <code>> 内容</code></div>
+            <div class="cheat-item">链接: <code>[名](URL)</code></div>
+            <div class="cheat-item">内容居中: <code><center>内容</center></code></div>\n            <p style="font-size:10px; color:#999; margin-top:20px;">*注: 标题 # 后必须加空格</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'http://10.189.29.81:7070/api/docs';
+    let allDocs = [], curId = null;
+
+    async function refreshList() {
+        try {
+            const res = await fetch(`${API_BASE}/all`);
+            const json = await res.json();
+            allDocs = json.data || [];
+            
+            // 渲染左侧列表
+            document.getElementById('docList').innerHTML = allDocs.map(d => `
+                <div class="doc-item ${d.id === curId ? 'active' : ''}" onclick="loadDoc(${d.id})">
+                    ${d.status ? '✅' : '📝'} ${d.title || '无标题'}
+                </div>
+            `).join('');
+
+            // 渲染分类下拉框
+            const select = document.getElementById('inCat');
+            const cats = [...new Set(allDocs.map(d => d.category).filter(c => c))];
+            select.innerHTML = '<option value="">-- 选择分类 --</option><option value="NEW">+ 新建分类...</option>' + 
+                              cats.map(c => `<option value="${c}">${c}</option>`).join('');
+            if(curId) {
+                const curDoc = allDocs.find(x => x.id === curId);
+                if(curDoc) select.value = curDoc.category;
+            }
+        } catch(e) { console.error('加载失败'); }
+    }
+
+    function toggleNewCat() {
+        document.getElementById('inNewCat').style.display = document.getElementById('inCat').value === 'NEW' ? 'inline-block' : 'none';
+    }
+
+    function loadDoc(id) {
+        const d = allDocs.find(x => x.id === id);
+        if(!d) return;
+        curId = d.id;
+        document.getElementById('inTitle').value = d.title;
+        document.getElementById('inContent').value = d.content;
+        document.getElementById('inStatus').checked = d.status === 1;
+        document.getElementById('docStatusInfo').innerText = '📝 正在编辑: ' + d.title;
+        document.getElementById('delBtn').style.display = 'inline-block';
+        
+        const select = document.getElementById('inCat');
+        select.value = d.category;
+        toggleNewCat();
+        refreshPreview();
+        refreshList();
+    }
+
+    function newDoc() {
+        curId = null;
+        document.getElementById('inTitle').value = '';
+        document.getElementById('inContent').value = '';
+        document.getElementById('inCat').value = '';
+        document.getElementById('inStatus').checked = false;
+        document.getElementById('docStatusInfo').innerText = '✨ 撰写新篇章...';
+        document.getElementById('delBtn').style.display = 'none';
+        toggleNewCat();
+        refreshPreview();
+        refreshList();
+    }
+
+    async function doSave() {
+        const title = document.getElementById('inTitle').value;
+        const content = document.getElementById('inContent').value;
+        let category = document.getElementById('inCat').value;
+        if(category === 'NEW') category = document.getElementById('inNewCat').value;
+        const status = document.getElementById('inStatus').checked ? 1 : 0;
+
+        if(!title) return alert('标题必填哦！');
+
+        const res = await fetch(`${API_BASE}/save`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ id: curId, title, content, category, status })
+        });
+        const result = await res.json();
+        alert('同步成功！🚀');
+        if(!curId) curId = result.id;
+        refreshList();
+    }
+
+    async function doDelete() {
+        if(!confirm('确定要销毁这份文档吗？')) return;
+        await fetch(`${API_BASE}/delete`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ id: curId })
+        });
+        newDoc();
+        refreshList();
+    }
+
+    function refreshPreview() {
+        const c = document.getElementById('inContent').value;
+        const pane = document.getElementById('prePane');
+        if (typeof marked !== 'undefined') {
+            pane.innerHTML = marked.parse(c || '*[实时预览区]*');
+        }
+    }
+
+    refreshList();
+</script>
+</body>
+</html>
